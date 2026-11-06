@@ -4,6 +4,10 @@ on:
   push:
     branches: [ main, master ]
 
+env:
+  ANDROID_HOME: /usr/local/lib/android/sdk
+  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -16,16 +20,26 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
-
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Install SDK
+      - name: SDK packages
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          SDK="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDK" ]; then SDK="$ANDROID_HOME/tools/bin/sdkmanager"; fi
+          echo "sdkmanager: $SDK"
+          yes | "$SDK" --sdk_root="$ANDROID_HOME" --licenses > /dev/null 2>&1 || true
+          for pkg in "platform-tools" "platforms;android-34" "build-tools;34.0.0"; do
+            ok=0
+            for try in 1 2 3; do
+              if "$SDK" --sdk_root="$ANDROID_HOME" "$pkg"; then ok=1; break; fi
+              echo "retry $pkg ($try)"; sleep 6
+            done
+            [ "$ok" = "1" ] || echo "WARN: could not install $pkg"
+          done
+          echo "--- installed platforms ---"
+          ls "$ANDROID_HOME/platforms" || true
 
       - name: Diagnose
         run: |
@@ -35,13 +49,12 @@ jobs:
           wc -l app/src/main/java/com/venice/bsaim/App.kt
           wc -l app/src/main/AndroidManifest.xml
           wc -l app/build.gradle.kts
-          echo "=== gradle ==="
-          gradle --version
           echo "=== checks ==="
           test -f app/src/main/java/com/venice/bsaim/App.kt || { echo "MISSING App.kt"; exit 1; }
           test -f app/src/main/AndroidManifest.xml || { echo "MISSING manifest"; exit 1; }
           test -f app/build.gradle.kts || { echo "MISSING app gradle"; exit 1; }
           test -f settings.gradle.kts || { echo "MISSING settings"; exit 1; }
+          grep -n "compileSdk" app/build.gradle.kts || true
           echo "all present"
 
       - name: Build APK
