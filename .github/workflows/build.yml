@@ -7,10 +7,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -26,10 +27,29 @@ jobs:
           yes | sdkmanager --licenses > /dev/null || true
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Diagnose
+        run: |
+          echo "=== files ==="
+          find . -path ./.git -prune -o -type f -print | sort
+          echo "=== line counts ==="
+          wc -l app/src/main/java/com/venice/bsaim/App.kt
+          wc -l app/src/main/AndroidManifest.xml
+          wc -l app/build.gradle.kts
+          echo "=== gradle ==="
+          gradle --version
+          echo "=== checks ==="
+          test -f app/src/main/java/com/venice/bsaim/App.kt || { echo "MISSING App.kt"; exit 1; }
+          test -f app/src/main/AndroidManifest.xml || { echo "MISSING manifest"; exit 1; }
+          test -f app/build.gradle.kts || { echo "MISSING app gradle"; exit 1; }
+          test -f settings.gradle.kts || { echo "MISSING settings"; exit 1; }
+          echo "all present"
+
       - name: Build APK
         run: gradle assembleDebug --no-daemon --stacktrace
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: bsaim-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
